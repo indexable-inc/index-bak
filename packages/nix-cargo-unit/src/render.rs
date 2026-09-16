@@ -6515,6 +6515,64 @@ version = "0.1.0"
     }
 
     #[test]
+    fn declared_test_module_keeps_dynamic_sql_reads_out_of_production_inputs() {
+        let TestInputFixture {
+            temp,
+            graph,
+            options,
+        } = test_input_fixture();
+        let root = temp.path().join("fixture");
+        fs::create_dir_all(root.join("src/conversion")).unwrap();
+        fs::create_dir_all(root.join("tests")).unwrap();
+        fs::write(root.join("src/conversion.rs"), "#[cfg(test)] mod tests;\n").unwrap();
+        fs::write(root.join("src/conversion/tests.rs"),
+            "const SQL: &str = include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/migrations/one.sql\"));\n").unwrap();
+        let integration = root.join("tests/golden_pair.rs");
+        fs::write(&integration, "#[test] fn pair() {}\n").unwrap();
+        let manifest = fs::read_to_string(root.join("Cargo.toml")).unwrap();
+        let declared = manifest.replace("test-only = [", "test-only = [\"tests\", ");
+        fs::write(root.join("Cargo.toml"), &declared).unwrap();
+
+        // An unclassified dynamic include must retain all inputs. ix-db's
+        // conversion tests exercised this conservative boundary and pulled
+        // unrelated integration-test edits into its production library source.
+        let (refs, entries) = prepare_sources(&graph, &options).unwrap();
+        assert!(entries[&refs[0]].excluded_relatives.is_empty());
+        fs::write(
+            root.join("Cargo.toml"),
+            declared.replace(
+                "test-only = [",
+                "test-only = [\"src/conversion/tests.rs\", ",
+            ),
+        )
+        .unwrap();
+        let (refs, entries) = prepare_sources(&graph, &options).unwrap();
+        let production = selected_source_bytes(&entries[&refs[0]], temp.path());
+        let tests = selected_source_bytes(&entries[&refs[1]], temp.path());
+        assert!(!production.contains_key("fixture/tests/golden_pair.rs"));
+        assert!(!production.contains_key("fixture/src/conversion/tests.rs"));
+        assert!(production.contains_key("fixture/migrations/one.sql"));
+        assert!(tests.contains_key("fixture/src/conversion/tests.rs"));
+
+        fs::write(&integration, "#[test] fn changed_pair() {}\n").unwrap();
+        let (after_refs, after) = prepare_sources(&graph, &options).unwrap();
+        assert_eq!(
+            production,
+            selected_source_bytes(&after[&after_refs[0]], temp.path())
+        );
+        assert_ne!(
+            tests,
+            selected_source_bytes(&after[&after_refs[1]], temp.path())
+        );
+        fs::write(root.join("migrations/one.sql"), "SELECT 2;\n").unwrap();
+        let (sql_refs, sql_entries) = prepare_sources(&graph, &options).unwrap();
+        assert_ne!(
+            production,
+            selected_source_bytes(&sql_entries[&sql_refs[0]], temp.path())
+        );
+    }
+
+    #[test]
     fn test_only_edits_preserve_production_inputs_but_change_test_inputs() {
         let TestInputFixture {
             temp,
