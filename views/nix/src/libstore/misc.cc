@@ -399,7 +399,7 @@ StorePath resolveDerivedPath(Store & store, const SingleDerivedPath & req, Store
             [&](const SingleDerivedPath::Opaque & bo) { return bo.path; },
             [&](const SingleDerivedPath::Built & bfd) {
                 auto drvPath = resolveDerivedPath(store, *bfd.drvPath, evalStore_);
-                auto outputPaths = evalStore.queryPartialDerivationOutputMap(drvPath, evalStore_);
+                auto outputPaths = store.queryPartialDerivationOutputMap(drvPath, &evalStore);
                 if (outputPaths.count(bfd.output) == 0)
                     throw Error(
                         "derivation '%s' does not have an output named '%s'",

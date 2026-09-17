@@ -86,6 +86,7 @@ sources = files(
   's3-url.cc',
   'serve-protocol.cc',
   'ssh-store.cc',
+  'sqlite.cc',
   'store-reference.cc',
   'uds-remote-store.cc',
   'worker-protocol.cc',

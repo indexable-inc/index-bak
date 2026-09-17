@@ -136,6 +136,19 @@ defmodule IxMcp.Forge.VerdictsTest do
       assert {:ok, [], false, _state} = fetch([record("building")])
     end
 
+    test "an interrupted attempt produces no verdict even beside completed runs" do
+      interrupted =
+        record("failed")
+        |> JSON.decode!()
+        |> Map.put("status", "interrupted")
+        |> Map.put("interruption_reason", "the previous owner ended without a verdict")
+        |> JSON.encode!()
+
+      assert {:ok, [], false, _state} = fetch([interrupted])
+      assert {:ok, [item], false, _state} = fetch([interrupted, record("passed")])
+      assert item.verdict == :pass
+    end
+
     test "a live run beside terminal ones is the only thing dropped" do
       assert {:ok, items, false, _state} =
                fetch([record("building"), record("passed"), record("failed")])

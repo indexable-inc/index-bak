@@ -1,4 +1,5 @@
 #include "nix/util/logging.hh"
+#include "derivation-output-map.hh"
 #include "nix/util/signature/local-keys.hh"
 #include "nix/util/source-accessor.hh"
 #include "nix/store/globals.hh"
@@ -458,10 +459,84 @@ std::map<std::string, std::optional<StorePath>> Store::queryStaticPartialDerivat
     return outputs;
 }
 
+namespace {
+
+struct OutputMapQueryKey
+{
+    const Store * store;
+    const Store * evalStore;
+    StorePath path;
+
+    bool operator<(const OutputMapQueryKey & other) const
+    {
+        if (store != other.store)
+            return std::less<const Store *>{}(store, other.store);
+        if (evalStore != other.evalStore)
+            return std::less<const Store *>{}(evalStore, other.evalStore);
+        return path < other.path;
+    }
+};
+
+struct OutputMapQuery
+{
+    std::map<OutputMapQueryKey, std::map<std::string, std::optional<StorePath>>> completed;
+    std::set<OutputMapQueryKey> visiting;
+};
+
+thread_local OutputMapQuery * activeOutputMapQuery = nullptr;
+
+} // namespace
+
+struct DerivationOutputMapQueryScope::State
+{
+    OutputMapQuery query;
+};
+
+DerivationOutputMapQueryScope::DerivationOutputMapQueryScope()
+{
+    if (!activeOutputMapQuery) {
+        state = std::make_unique<State>();
+        activeOutputMapQuery = &state->query;
+    }
+}
+
+DerivationOutputMapQueryScope::~DerivationOutputMapQueryScope()
+{
+    if (state) {
+        assert(activeOutputMapQuery == &state->query);
+        activeOutputMapQuery = nullptr;
+    }
+}
+
+std::optional<StorePath>
+Store::queryResolvedDrvOutputPath(const BasicDerivation & resolved, const OutputName & outputName)
+{
+    if (auto path = resolved.outputs.at(outputName).path(*this, resolved.name, outputName))
+        return path;
+    if (!std::holds_alternative<DerivationOutput::CAFloating>(resolved.outputs.at(outputName).raw))
+        return std::nullopt;
+    // The normalized identity includes realized input paths. Its registration
+    // retains ordinary nondeterminism checks; an unresolved static alias does not.
+    auto hash = staticOutputHashes(*this, Derivation{resolved}).at(outputName);
+    if (auto realization = queryRealisation({hash, outputName}))
+        return realization->outPath;
+    return std::nullopt;
+}
+
 std::map<std::string, std::optional<StorePath>>
 Store::queryPartialDerivationOutputMap(const StorePath & path, Store * evalStore_)
 {
     auto & evalStore = evalStore_ ? *evalStore_ : *this;
+    // Shared dependency diamonds must be resolved once per query, rather
+    // than once per path through the graph. Discard the memo at the outer
+    // boundary so a later CA repair cannot reuse an earlier input mapping.
+    DerivationOutputMapQueryScope queryScope;
+    OutputMapQueryKey key{.store = this, .evalStore = &evalStore, .path = path};
+    if (auto cached = activeOutputMapQuery->completed.find(key); cached != activeOutputMapQuery->completed.end())
+        return cached->second;
+    if (!activeOutputMapQuery->visiting.insert(key).second)
+        throw Error("cycle while resolving outputs of '%s'", printStorePath(path));
+    Finally clearVisiting = [&]() { activeOutputMapQuery->visiting.erase(key); };
 
     auto outputs = evalStore.queryStaticPartialDerivationOutputMap(path);
 
@@ -469,8 +544,23 @@ Store::queryPartialDerivationOutputMap(const StorePath & path, Store * evalStore
         return outputs;
 
     auto drv = evalStore.readInvalidDerivation(path);
-    auto drvHashes = staticOutputHashes(*this, drv);
+    auto drvHashes = staticOutputHashes(evalStore, drv);
+    std::optional<BasicDerivation> resolved;
+    auto needsInputProof = [&](const DerivationOutput & output) {
+        return std::holds_alternative<DerivationOutput::Deferred>(output.raw)
+               || (!drv.inputDrvs.map.empty() && std::holds_alternative<DerivationOutput::CAFloating>(output.raw));
+    };
+    if (std::ranges::any_of(drv.outputs, [&](const auto & output) { return needsInputProof(output.second); }))
+        resolved = drv.tryResolve(*this, &evalStore);
     for (auto & [outputName, hash] : drvHashes) {
+        if (needsInputProof(drv.outputs.at(outputName))) {
+            // Repairing a CA producer can change its realized path without
+            // changing this derivation's static hash. Historical aliases lack
+            // dependency provenance, so derive the current path from inputs.
+            outputs.insert_or_assign(
+                outputName, resolved ? queryResolvedDrvOutputPath(*resolved, outputName) : std::nullopt);
+            continue;
+        }
         auto realisation = queryRealisation(DrvOutput{hash, outputName});
         if (realisation) {
             outputs.insert_or_assign(outputName, realisation->outPath);
@@ -482,6 +572,7 @@ Store::queryPartialDerivationOutputMap(const StorePath & path, Store * evalStore
         }
     }
 
+    activeOutputMapQuery->completed.emplace(std::move(key), outputs);
     return outputs;
 }
 

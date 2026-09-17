@@ -47,8 +47,9 @@ defmodule IxMcp.Stdlib.Forge do
   ## What a verdict is, and what it is not
 
   `await_verdict/1` returns `{:passed, report}` or `{:failed, report}` only
-  for the two terminal statuses the reconciler writes. Everything else is
-  `{:indeterminate, report}`, including the case that matters most: the CI
+  for `passed` and `failed`. An `interrupted` attempt immediately returns
+  `{:indeterminate, report}` because it ended without a CI verdict. Other
+  unresolved states become indeterminate when waiting ends, including the CI
   consumer being dead. A waiter that cannot tell "nobody is draining the
   queue" from "still building" reports the first as the second forever, so
   liveness is a leg of the answer rather than a footnote
@@ -829,13 +830,25 @@ defmodule IxMcp.Stdlib.Forge do
      }}
   end
 
-  defp decide(%{"status" => status} = record, state) do
+  defp decide(%{"status" => "interrupted"} = record, _state) do
+    reason = record["interruption_reason"]
+    detail = if is_binary(reason) and reason != "", do: ": #{reason}", else: ""
+
+    {:indeterminate,
+     %{
+       run_id: to_string(record["run_id"]),
+       status: "interrupted",
+       reason: "the CI attempt was interrupted without a verdict#{detail}"
+     }}
+  end
+
+  defp decide(%{"status" => _status} = record, state) do
     # A record existing does NOT answer liveness: the reconciler can die with a
     # record sitting at "building", and a waiter that latches liveness off on
     # first sight then reports "the run is building" until its timeout -- the
     # exact confusion this module's moduledoc claims to have removed. What
     # progress resets is the CLOCK, not the question.
-    wait(progress(state, record), "the run is #{status}")
+    wait(progress(state, record), pending_reason(record))
   end
 
   defp decide(nil, state) do
@@ -847,6 +860,27 @@ defmodule IxMcp.Stdlib.Forge do
   # than raise out through `land/2`.
   defp decide(record, state) when is_map(record) do
     wait(state, "a run record for this change is in an unreadable shape")
+  end
+
+  @spec pending_reason(map()) :: String.t()
+  defp pending_reason(record) do
+    status = record["status"]
+
+    case record["execution_owner"] do
+      %{"kind" => "local", "state_dir" => state_dir, "cgroup_root" => cgroup_root}
+      when is_binary(state_dir) and state_dir != "" and is_binary(cgroup_root) and
+             cgroup_root != "" ->
+        "the recorded run status is #{status}; current execution is unverified"
+
+      %{"kind" => "fork"} ->
+        "execution-unverified (fork owner; last recorded status: #{status})"
+
+      nil ->
+        "execution-unverified (legacy record without an owner; last recorded status: #{status})"
+
+      _unknown ->
+        "execution-unverified (unknown owner; last recorded status: #{status})"
+    end
   end
 
   # Progress is a CHANGED record, not a seen one.
@@ -878,9 +912,8 @@ defmodule IxMcp.Stdlib.Forge do
     end
   end
 
-  # The liveness leg. A dead consumer means no verdict is coming, so the
-  # answer is INDETERMINATE and named -- never "still waiting", which is what
-  # a waiter without this leg reports until its timeout.
+  # Coordinator liveness bounds the wait but does not prove a historical
+  # attempt stopped: a fork may belong to another execution backend.
   @spec check_consumer(map(), String.t()) :: outcome()
   defp check_consumer(state, reason) do
     case state.consumer.() do
@@ -890,7 +923,10 @@ defmodule IxMcp.Stdlib.Forge do
 
       {:dead, consumer_state} ->
         {:indeterminate,
-         %{reason: "the CI consumer is #{consumer_state}, so no verdict is coming (#{reason})"}}
+         %{
+           reason:
+             "the CI consumer is #{consumer_state}, no CI verdict is established (#{reason})"
+         }}
 
       {:unknown, detail} ->
         {:indeterminate,
@@ -898,19 +934,32 @@ defmodule IxMcp.Stdlib.Forge do
     end
   end
 
-  # One change can own SEVERAL records: a resubmit after a red, a queue re-run,
-  # an amend. `Enum.find` answers with whichever the reader happened to put
-  # first, and `Runs.records/1` prepends while consuming a newest-first read, so
-  # `find` systematically returns the OLDEST -- i.e. it answers a resubmit with
-  # the previous attempt's `failed`. The newest by `updated_at_ms` is the only
-  # record that describes this attempt. `IxMcp.Forge.Verdicts` already sorted
-  # this way and the extraction lost it, which is the recurring shape of an
-  # extraction bug: the behaviour lived in a sort nobody named.
+  # Historical reconciliation rewrites updated_at_ms on old attempts. Order
+  # attempts by their immutable start, then use update time only to select
+  # progress within one run. Otherwise an old interruption can hide a newer
+  # passed or still-building attempt after a coordinator restart.
   @spec newest_match([map()], {:change_id, String.t()} | {:subject, String.t()}) :: map() | nil
   defp newest_match(records, key) do
     records
     |> Enum.filter(&matches?(&1, key))
-    |> Enum.max_by(&updated_at(&1), fn -> nil end)
+    |> Enum.group_by(& &1["run_id"])
+    |> Map.values()
+    |> Enum.map(&Enum.max_by(&1, fn record -> updated_at(record) end))
+    |> Enum.sort_by(& &1["run_id"])
+    |> Enum.max_by(&started_at/1, fn -> nil end)
+  end
+
+  @spec started_at(map()) :: integer()
+  defp started_at(%{"started_at_ms" => started}) when is_integer(started) and started >= 0,
+    do: started
+
+  defp started_at(record) do
+    # Older records can omit the field, but the run ID retains its start
+    # epoch. Never substitute the mutable update timestamp for attempt age.
+    case Regex.run(~r/-(\d+)$/, to_string(record["run_id"])) do
+      [_match, epoch] -> String.to_integer(epoch)
+      nil -> 0
+    end
   end
 
   @spec updated_at(map()) :: integer()

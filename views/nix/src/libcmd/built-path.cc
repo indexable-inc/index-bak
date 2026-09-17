@@ -101,27 +101,83 @@ nlohmann::json BuiltPath::toJSON(const StoreDirConfig & store) const
         raw());
 }
 
-RealisedPath::Set BuiltPath::toRealisedPaths(Store & store) const
+RealisedPath::Set BuiltPath::toRealisedPaths(Store & store, RealisationScope scope) const
 {
     RealisedPath::Set res;
+    std::set<DrvOutput> copied;
+    std::set<DrvOutput> visiting;
+    StorePathSet proofPaths;
+    std::function<void(const StorePath &, const OutputName &, const StorePath &)> addOutput;
+    std::function<void(const StorePath &, const DerivedPathMap<StringSet>::ChildNode &)> addInputs;
+    addInputs = [&](const StorePath & drvPath, const auto & node) {
+        auto drv = store.readDerivation(drvPath);
+        auto outputs = store.queryPartialDerivationOutputMap(drvPath);
+        auto requireOutput = [&](const OutputName & name) {
+            auto output = outputs.find(name);
+            if (output == outputs.end() || !output->second)
+                throw Error("missing current realization for '%s^%s'", store.printStorePath(drvPath), name);
+            return *output->second;
+        };
+        for (const auto & name : node.value)
+            // Static input paths are recoverable from the derivation alone;
+            // their build graphs and realization rows are not proof inputs.
+            if (!drv.outputs.at(name).path(store, drv.name, name)) {
+                auto path = requireOutput(name);
+                addOutput(drvPath, name, path);
+                proofPaths.insert(path);
+            }
+        for (const auto & [name, child] : node.childMap) {
+            auto path = requireOutput(name);
+            addOutput(drvPath, name, path);
+            proofPaths.insert(path);
+            addInputs(path, child);
+        }
+    };
+    addOutput = [&](const StorePath & drvPath, const OutputName & outputName, const StorePath & outputPath) {
+        auto drv = store.readDerivation(drvPath);
+        DrvOutput key{staticOutputHashes(store, drv).at(outputName), outputName};
+        if (copied.contains(key))
+            return;
+        if (!visiting.insert(key).second)
+            throw Error("cycle while copying realization '%s'", key.to_string());
+        auto realization = store.queryRealisation(key);
+        if (!realization || realization->outPath != outputPath)
+            throw Error("missing or stale realization '%s' while copying", key.to_string());
+        if (scope == RealisationScope::Outputs) {
+            res.insert(Realisation{*realization, key});
+            visiting.erase(key);
+            copied.insert(key);
+            return;
+        }
+        // A recipient needs the input mappings and normalized CA witness to
+        // validate a cache hit. Copy their existing signatures, never infer or
+        // sign a normalized mapping from the unresolved alias alone.
+        if (std::holds_alternative<DerivationOutput::Deferred>(drv.outputs.at(outputName).raw)
+            || std::holds_alternative<DerivationOutput::CAFloating>(drv.outputs.at(outputName).raw))
+            for (const auto & [input, node] : drv.inputDrvs.map)
+                addInputs(input, node);
+        if (!drv.inputDrvs.map.empty()
+            && std::holds_alternative<DerivationOutput::CAFloating>(drv.outputs.at(outputName).raw)) {
+            auto resolved = drv.tryResolve(store);
+            if (!resolved)
+                throw Error("cannot resolve current inputs for realization '%s'", key.to_string());
+            DrvOutput normalized{staticOutputHashes(store, Derivation{*resolved}).at(outputName), outputName};
+            auto witness = store.queryRealisation(normalized);
+            if (!witness || witness->outPath != outputPath)
+                throw Error("missing or incorrect normalized realization '%s'", normalized.to_string());
+            res.insert(Realisation{*witness, normalized});
+        }
+        res.insert(Realisation{*realization, key});
+        visiting.erase(key);
+        copied.insert(key);
+    };
     std::visit(
         overloaded{
             [&](const BuiltPath::Opaque & p) { res.insert(p.path); },
             [&](const BuiltPath::Built & p) {
-                auto drvHashes = staticOutputHashes(store, store.readDerivation(p.drvPath->outPath()));
                 for (auto & [outputName, outputPath] : p.outputs) {
                     if (experimentalFeatureSettings.isEnabled(Xp::CaDerivations)) {
-                        auto drvOutput = get(drvHashes, outputName);
-                        if (!drvOutput)
-                            throw Error(
-                                "the derivation '%s' has unrealised output '%s' (derived-path.cc/toRealisedPaths)",
-                                store.printStorePath(p.drvPath->outPath()),
-                                outputName);
-                        DrvOutput key{*drvOutput, outputName};
-                        auto thisRealisation = store.queryRealisation(key);
-                        assert(thisRealisation); // We’ve built it, so we must
-                                                 // have the realisation
-                        res.insert(Realisation{*thisRealisation, std::move(key)});
+                        addOutput(p.drvPath->outPath(), outputName, outputPath);
                     } else {
                         res.insert(outputPath);
                     }
@@ -129,6 +185,10 @@ RealisedPath::Set BuiltPath::toRealisedPaths(Store & store) const
             },
         },
         raw());
+    StorePathSet proofClosure;
+    store.computeFSClosure(proofPaths, proofClosure);
+    for (const auto & path : proofClosure)
+        res.insert(path);
     return res;
 }
 

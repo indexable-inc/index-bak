@@ -137,6 +137,26 @@ JSON result as the completion witness. For a floating content-addressed output,
 `nix build --store local --no-link --json <drv>^out` resolved the finished path
 when legacy `nix-store --query --outputs <drv>` could not.
 
+## Repeated dependency reads: measure the root query's scope
+
+When a build spends CPU resolving cached inputs, sample its current stack and
+count repeated `.drv` opens before blaming storage. A memo inside recursive
+`queryPartialDerivationOutputMap` still repeats shared dependencies when each
+sibling in `Derivation::tryResolve` starts a new outer query.
+
+Verified 2026-09-17: sharing the memo across one synchronous, read-only
+`tryResolve` reduced a cached derivation lookup from 2.90 s to 0.34 s. Opens fell
+from 24,942 to 5,361 across the same 4,722 distinct derivations, with identical
+resolved output in all six runs. This measures lookup performance, not full CI.
+The native suite passed 673 tests; the shared-chain regression failed on the old
+code with 1,088 reads against a 260-read bound.
+
+Keep mutable proof caches within that synchronous scope. Test exception cleanup
+and fresh resolution after a producer repair through another store connection.
+Preserve uncached semantics for callbacks that can mutate proofs between
+lookups. See `RootResolutionSharesSiblingProofsAndExpiresAfterException` and
+`CallbackResolutionCanChangeProofBetweenLookups` in Nix's libstore tests.
+
 ## Which .nix file put this here: `whence`
 
 ```

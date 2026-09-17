@@ -203,7 +203,7 @@ defmodule IxMcp.Stdlib.ForgeTest do
     # re-run, and the read arrives newest-first, so the reader prepends and
     # `Enum.find` returns the OLDEST: a resubmit would be answered with the
     # previous attempt's verdict. The two records here disagree on purpose, so
-    # only the newest-by-updated_at rule can produce the right answer.
+    # only the newest-attempt rule can produce the right answer.
     test "two records, one change, newest wins" do
       change = passed_change()
 
@@ -212,7 +212,8 @@ defmodule IxMcp.Stdlib.ForgeTest do
         |> JSON.decode!()
         |> Map.merge(%{
           "run_id" => "aaaaaaaaaaaa-1786500000000",
-          "updated_at_ms" => 1_786_500_000
+          "started_at_ms" => 1_786_500_000_000,
+          "updated_at_ms" => 1_786_500_000_100
         })
         |> JSON.encode!()
 
@@ -222,7 +223,8 @@ defmodule IxMcp.Stdlib.ForgeTest do
         |> Map.merge(%{
           "change_id" => change,
           "run_id" => "bbbbbbbbbbbb-1786599999999",
-          "updated_at_ms" => 1_786_599_999
+          "started_at_ms" => 1_786_599_999_999,
+          "updated_at_ms" => 1_786_600_000_100
         })
         |> JSON.encode!()
 

@@ -16,9 +16,9 @@ defmodule IxMcp.Forge.Verdicts do
   why `queue.json` and `jj forge dump` are the wrong instruments and how the
   read fails closed. This module is one of its two consumers: it sweeps by
   file mtime, because a record is rewritten when its status changes, so the
-  mtime IS the moment the verdict was reached and a run that started two
-  hours ago and finished just now is still inside the window. The other
-  consumer, `IxMcp.Stdlib.Forge`, waits on one named change instead.
+  mtime includes newly completed runs and historical reconciliation. Only
+  `passed` and `failed` are announced; `interrupted` has no CI verdict.
+  The other consumer, `IxMcp.Stdlib.Forge`, waits on one named change instead.
 
   A failed read becomes `{:error, detail}`, and `IxMcp.Inbox.Watcher` then
   backs off WITHOUT advancing its watermark, so a blinked tailnet loses no
@@ -57,9 +57,8 @@ defmodule IxMcp.Forge.Verdicts do
 
   @default_interval_ms 60_000
   @default_backfill_s 600
-  # `passed` and `failed` are the two terminal members of the reconciler's
-  # RunStatus; `materializing` and `building` are live and must not be
-  # announced as a verdict.
+  # Only these statuses carry CI verdicts. `interrupted` ends an attempt
+  # without a verdict and must not become a failure announcement.
   @terminal ["passed", "failed"]
   @id_chars 12
 

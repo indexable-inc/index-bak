@@ -135,7 +135,9 @@ struct CmdSign : BuiltPathsCommand
         // Opaque paths (including recursively selected references) do not identify
         // which build produced them.
         for (auto & path : rootPaths) {
-            auto selected = path.toRealisedPaths(*store);
+            auto selected = path.toRealisedPaths(*store, BuiltPath::RealisationScope::InputProofClosure);
+            for (const auto & proof : selected)
+                storePaths.insert(proof.path());
             realisations.insert(selected.begin(), selected.end());
         }
         SecretKey secretKey(readFile(secretKeyFile));

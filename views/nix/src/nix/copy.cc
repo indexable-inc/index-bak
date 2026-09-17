@@ -57,7 +57,8 @@ struct CmdCopy : virtual CopyCommand, virtual BuiltPathsCommand, MixProfile, Mix
         RealisedPath::Set stuffToCopy;
 
         for (auto & builtPath : allPaths) {
-            auto theseRealisations = builtPath.toRealisedPaths(*srcStore);
+            auto theseRealisations =
+                builtPath.toRealisedPaths(*srcStore, BuiltPath::RealisationScope::InputProofClosure);
             stuffToCopy.insert(theseRealisations.begin(), theseRealisations.end());
         }
 

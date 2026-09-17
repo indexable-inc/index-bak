@@ -98,7 +98,8 @@ struct BuiltPath : _BuiltPathRaw
     }
 
     StorePathSet outPaths() const;
-    RealisedPath::Set toRealisedPaths(Store & store) const;
+    enum class RealisationScope { Outputs, InputProofClosure };
+    RealisedPath::Set toRealisedPaths(Store & store, RealisationScope scope = RealisationScope::Outputs) const;
 
     nlohmann::json toJSON(const StoreDirConfig & store) const;
 };

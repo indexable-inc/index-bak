@@ -443,6 +443,7 @@ public:
      * derivation 'deriver'.
      */
     void registerDrvOutput(const Realisation & info) override;
+    void registerResolvedDrvOutput(const Realisation & info, const Derivation & original, Store & evalStore) override;
     void registerDrvOutput(const Realisation & info, CheckSigsFlag checkSigs) override;
     void cacheDrvOutputMapping(
         State & state, const uint64_t deriver, const std::string & outputName, const StorePath & output);

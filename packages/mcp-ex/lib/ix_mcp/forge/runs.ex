@@ -3,9 +3,10 @@ defmodule IxMcp.Forge.Runs do
   The forge CI reconciler's run records, and the one reader over them.
 
   A gate run writes `<runs-dir>/<commit12>-<epoch_ms>/progress.json` and
-  rewrites it on every status transition, so that file IS the verdict and its
-  mtime is the moment the verdict was reached. Two consumers read those
-  records -- `IxMcp.Forge.Verdicts` sweeps them by mtime to announce verdicts
+  rewrites it on status transitions and historical reconciliation. Only
+  `passed` and `failed` carry CI verdicts; `interrupted` records an ended
+  attempt without a verdict. Its mtime is the rewrite time. Two consumers
+  read those records -- `IxMcp.Forge.Verdicts` sweeps them by mtime to announce verdicts
   nobody asked for, and `IxMcp.Stdlib.Forge` waits on the one record
   belonging to a change it just submitted -- so the reader lives here and a
   correction to it lands once instead of twice.
@@ -18,8 +19,8 @@ defmodule IxMcp.Forge.Runs do
     * `jj forge dump` is authoritative and takes 100-160s under load
       while holding the repo, which is longer than any sane poll cadence.
 
-  A run record cannot lie either way, because it is written by the thing
-  doing the work.
+  A historical record describes an attempt. It does not establish current
+  process ownership or prove that a change landed.
 
   ## The commit id in the directory name is the REBASED one
 

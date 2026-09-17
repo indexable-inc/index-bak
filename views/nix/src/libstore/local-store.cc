@@ -646,6 +646,80 @@ void LocalStore::registerDrvOutput(const Realisation & info, CheckSigsFlag check
             "cannot register realisation '%s' because it lacks a signature by a trusted key", info.outPath.to_string());
 }
 
+void LocalStore::registerResolvedDrvOutput(const Realisation & info, const Derivation & original, Store & evalStore)
+{
+    auto output = original.outputs.find(info.id.outputName);
+    if (output == original.outputs.end()
+        || !(
+            std::holds_alternative<DerivationOutput::Deferred>(output->second.raw)
+            || (!original.inputDrvs.map.empty()
+                && std::holds_alternative<DerivationOutput::CAFloating>(output->second.raw)))) {
+        registerDrvOutput(info);
+        return;
+    }
+
+    auto hashes = staticOutputHashes(evalStore, original);
+    if (hashes.at(info.id.outputName) != info.id.drvHash)
+        throw Error("resolved realisation '%s' does not match its original derivation", info.id.to_string());
+    auto resolved = original.tryResolve(*this, &evalStore);
+    auto expected = resolved ? queryResolvedDrvOutputPath(*resolved, info.id.outputName) : std::nullopt;
+    if (!expected || *expected != info.outPath)
+        throw Error("resolved realisation '%s' does not match its current inputs", info.id.to_string());
+
+    addTempRoot(info.outPath);
+    if (!isValidPath(info.outPath))
+        throw Error("resolved realisation '%s' has no valid output", info.id.to_string());
+    auto previous = queryRealisation(info.id);
+    if (!previous || info.isCompatibleWith(*previous)) {
+        registerDrvOutput(info);
+        return;
+    }
+
+    // Use a private connection so resolution can take its own state locks
+    // inside one read/write transaction. Sharing this connection with other
+    // threads would let a blocked writer hold the state mutex needed by the
+    // recursive reads. SQLite rejects an upgrade if a concurrent producer
+    // repair changed this snapshot; retrySQLite then repeats the whole proof.
+    LocalStore proofStore{config};
+    retrySQLite<void>([&]() {
+        SQLiteTxn txn(proofStore._state->lock()->db);
+        auto currentResolved = original.tryResolve(proofStore, &evalStore);
+        auto currentExpected = currentResolved
+                                   ? proofStore.queryResolvedDrvOutputPath(*currentResolved, info.id.outputName)
+                                   : std::nullopt;
+        if (!currentExpected || *currentExpected != info.outPath)
+            throw Error("realisation '%s' inputs changed during deferred alias repair", info.id.to_string());
+        auto state(proofStore._state->lock());
+        auto current = proofStore.queryRealisation_(*state, info.id);
+        if (current && info.isCompatibleWith(*current)) {
+            // Another builder can publish this same proven output while we
+            // resolve it. Accept that winner and merge only signatures for
+            // the current output, just as ordinary registration does.
+            auto signatures = current->signatures;
+            signatures.insert(info.signatures.begin(), info.signatures.end());
+            state->stmts->UpdateRealisedOutput
+                .use()(concatStringsSep(" ", Signature::toStrings(signatures)))(info.id.strHash())(info.id.outputName)
+                .exec();
+            txn.commit();
+            return;
+        }
+        if (!current || current->outPath != previous->outPath)
+            throw Error("realisation '%s' changed during deferred alias repair", info.id.to_string());
+        // Both objects remain valid. Replace only this proven stale alias and
+        // signatures; historical signatures authenticate the previous output.
+        state->stmts->RepairRealisedOutput
+            .use()(printStorePath(info.outPath))(concatStringsSep(" ", Signature::toStrings(info.signatures)))(
+                info.id.strHash())(info.id.outputName)(printStorePath(previous->outPath))
+            .exec();
+        txn.commit();
+    });
+    warn(
+        "repaired stale deferred realisation '%s': '%s' -> '%s'; old object retained",
+        info.id.to_string(),
+        printStorePath(previous->outPath),
+        printStorePath(info.outPath));
+}
+
 void LocalStore::registerDrvOutput(const Realisation & info)
 {
     experimentalFeatureSettings.require(Xp::CaDerivations);

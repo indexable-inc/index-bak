@@ -579,9 +579,15 @@ void BinaryCacheStore::queryRealisationUncached(
 
 void BinaryCacheStore::registerDrvOutput(const Realisation & info)
 {
+    auto merged = info;
+    if (auto previous = queryRealisation(info.id); previous && info.isCompatibleWith(*previous))
+        // Re-publishing a proven alias without a signing key must not erase
+        // signatures already authenticating this exact identity and output.
+        // A changed output cannot inherit signatures for its predecessor.
+        merged.signatures.insert(previous->signatures.begin(), previous->signatures.end());
     if (diskCache)
-        diskCache->upsertRealisation(config.getReference().render(/*FIXME withParams=*/false), info);
-    upsertFile(makeRealisationPath(info.id), static_cast<nlohmann::json>(info).dump(), "application/json");
+        diskCache->upsertRealisation(config.getReference().render(/*FIXME withParams=*/false), merged);
+    upsertFile(makeRealisationPath(info.id), static_cast<nlohmann::json>(merged).dump(), "application/json");
 }
 
 ref<RemoteFSAccessor> BinaryCacheStore::getRemoteFSAccessor(bool requireValidPath)

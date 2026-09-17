@@ -76,6 +76,10 @@ private:
 
     std::unique_ptr<MaintainCount<uint64_t>> mcExpectedBuilds;
 
+    // A sibling can repair a shared CA producer after a cached child succeeds.
+    // Retrying the same discarded normalization would make no progress.
+    StorePathSet discardedResolutions;
+
     /**
      * The states.
      */

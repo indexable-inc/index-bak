@@ -1,4 +1,5 @@
 #include "nix/store/derivations.hh"
+#include "derivation-output-map.hh"
 #include "nix/store/downstream-placeholder.hh"
 #include "nix/store/store-api.hh"
 #include "nix/store/globals.hh"
@@ -1169,6 +1170,7 @@ bool Derivation::shouldResolve() const
 
 std::optional<BasicDerivation> Derivation::tryResolve(Store & store, Store * evalStore) const
 {
+    DerivationOutputMapQueryScope queryScope;
     return tryResolve(
         store, [&](ref<const SingleDerivedPath> drvPath, const std::string & outputName) -> std::optional<StorePath> {
             try {

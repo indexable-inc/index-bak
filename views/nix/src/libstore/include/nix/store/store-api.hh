@@ -655,6 +655,17 @@ public:
      */
     virtual void registerDrvOutput(const Realisation & output) = 0;
 
+    /** Register an alias after a successful resolved build. Local stores may
+     * repair a stale deferred alias only with proof from the original inputs. */
+    /** Current resolved output: deterministic path or the normalized CA realization. */
+    std::optional<StorePath>
+    queryResolvedDrvOutputPath(const BasicDerivation & resolved, const OutputName & outputName);
+
+    virtual void registerResolvedDrvOutput(const Realisation & output, const Derivation &, Store &)
+    {
+        registerDrvOutput(output);
+    }
+
     virtual void registerDrvOutput(const Realisation & output, CheckSigsFlag checkSigs)
     {
         return registerDrvOutput(output);

@@ -972,20 +972,22 @@ std::optional<Descriptor> DerivationBuilderImpl::startBuild()
            corresponding to the valid outputs, and rewrite the
            contents of the new outputs to replace the dummy strings
            with the actual hashes. */
-        auto scratchPath = !status.known ? makeFallbackPath(outputName)
-                           : !needsHashRewrite()
-                               /* Can always use original path in sandbox */
-                               ? status.known->path
-                               : !status.known->isPresent()
-                                     /* If path doesn't yet exist can just use it */
-                                     ? status.known->path
-                                     : buildMode != bmRepair && !status.known->isValid()
-                                           /* If we aren't repairing we'll delete a corrupted path, so we
-                                              can use original path */
-                                           ? status.known->path
-                                           : /* If we are repairing or the path is totally valid, we'll need
-                                                to use a temporary path */
-                                           makeFallbackPath(status.known->path);
+        auto scratchPath =
+            !status.known ? makeFallbackPath(outputName)
+            : !needsHashRewrite()
+                /* Can always use original path in sandbox */
+                ? status.known->path
+                : !status.known->isPresent()
+                      /* If path doesn't yet exist can just use it */
+                      ? status.known->path
+                      : buildMode != bmRepair && !status.known->isValid() && !store.isValidPath(status.known->path)
+                            /* Corrupt archives have been removed under the output lock.
+                               A registered, retained CA-identity mismatch still exists:
+                               build beside it so registration can verify the old object. */
+                            ? status.known->path
+                            : /* If we are repairing or the path is totally valid, we'll need
+                                 to use a temporary path */
+                            makeFallbackPath(status.known->path);
         scratchOutputs.insert_or_assign(outputName, scratchPath);
 
         /* Root the scratch path against the garbage collector. For a

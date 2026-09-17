@@ -2,6 +2,7 @@
 #include <nlohmann/json.hpp>
 
 #include "nix/store/build/worker.hh"
+#include "nix/store/build/derivation-goal.hh"
 #include "nix/store/build/substitution-goal.hh"
 #include "nix/store/derivations.hh"
 #include "nix/store/dummy-store-impl.hh"
@@ -411,9 +412,9 @@ TEST_F(WorkerSubstitutionTest, floatingDerivationOutput)
 }
 
 /**
- * Test for issue #11928: substituting a CA derivation output should not
- * require fetching the output of an input derivation when that output
- * is not referenced.
+ * The #11928 build-only dependency must supply current input proof before
+ * the root's normalized realization can authorize substitution. The root's
+ * runtime reference closure alone does not carry that proof.
  */
 TEST_F(WorkerSubstitutionTest, floatingDerivationOutputWithDepDrv)
 {
@@ -531,7 +532,14 @@ TEST_F(WorkerSubstitutionTest, floatingDerivationOutputWithDepDrv)
         });
 
     // Snapshot the substituter
-    // Note: it has realisations for both drvs, but only the root's output store object
+    // Normal builders register the normalized identity as well as the static
+    // alias. A copied cache must carry that witness: the root's own content
+    // hash cannot prove which build-only dependency produced it.
+    auto normalized = rootDrv.tryResolve(*substituter, &*dummyStore);
+    ASSERT_TRUE(normalized);
+    auto normalizedHash = staticOutputHashes(*substituter, Derivation{*normalized}).at("out");
+    substituter->registerDrvOutput(
+        Realisation{UnkeyedRealisation{.outPath = rootOutputPath}, DrvOutput{normalizedHash, "out"}});
     checkpointJson("issue-11928/substituter", substituter);
 
     // The realisations should not exist in the destination store yet
@@ -565,20 +573,22 @@ TEST_F(WorkerSubstitutionTest, floatingDerivationOutputWithDepDrv)
     ASSERT_TRUE(rootRealisation);
     ASSERT_EQ(rootRealisation->outPath, rootOutputPath);
 
-    // #11928: The dependency's REALISATION should be fetched, because
-    // it is needed to resolve the underlying derivation. Currently the
-    // realisation is not fetched (bug). Once fixed: Change
-    // depRealisation ASSERT_FALSE to ASSERT_TRUE and uncomment the
-    // ASSERT_EQ
+    // Resolve the build-only dependency before accepting the normalized
+    // root witness, even though the root output does not reference it.
     auto depRealisation = dummyStore->queryRealisation(depDrvOutput);
-    ASSERT_FALSE(depRealisation);
-    // ASSERT_EQ(depRealisation->outPath, depOutputPath);
+    ASSERT_TRUE(depRealisation);
+    ASSERT_EQ(depRealisation->outPath, depOutputPath);
+    auto normalizedRealisation = dummyStore->queryRealisation({normalizedHash, "out"});
+    ASSERT_TRUE(normalizedRealisation);
+    ASSERT_EQ(normalizedRealisation->outPath, rootOutputPath);
 
-    // The dependency's OUTPUT is correctly not fetched (not referenced by root output)
-    ASSERT_FALSE(dummyStore->isValidPath(depOutputPath));
+    ASSERT_TRUE(dummyStore->isValidPath(depOutputPath));
 
     // Verify the goal succeeded
     ASSERT_EQ(upcast_goal(goal)->exitCode, Goal::ecSuccess);
+    auto success = goal->buildResult.tryGetSuccess();
+    ASSERT_TRUE(success);
+    ASSERT_EQ(success->status, BuildResult::Success::Substituted);
 
     // Disable CA derivations experimental feature
     experimentalFeatureSettings.set("extra-experimental-features", "");

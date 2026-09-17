@@ -86,6 +86,29 @@ Goal::Co DerivationGoal::haveDerivation(bool storeDerivation)
        this step. */
     if (drv->type().isImpure()) {
         experimentalFeatureSettings.require(Xp::ImpureDerivations);
+    } else if (
+        std::holds_alternative<DerivationOutput::Deferred>(drv->outputs.at(wantedOutput).raw)
+        || (!drv->inputDrvs.map.empty()
+            && std::holds_alternative<DerivationOutput::CAFloating>(drv->outputs.at(wantedOutput).raw))) {
+        // Input-dependent outputs must resolve their current inputs
+        // before consulting or substituting an alias. A repaired CA producer
+        // can otherwise leave a valid historical consumer under this hash.
+        // A binary cache cannot run the resolution goal's dependency builds.
+        // Reuse its existing alias only when current inputs prove that path.
+        if (buildMode == bmNormal) {
+            auto resolved = drv->tryResolve(worker.store, &worker.evalStore);
+            if (resolved) {
+                auto expected = worker.store.queryResolvedDrvOutputPath(*resolved, wantedOutput);
+                auto realisation = worker.store.queryRealisation({outputHash, wantedOutput});
+                if (expected && realisation && realisation->outPath == *expected) {
+                    worker.store.addTempRoot(*expected);
+                    if (worker.store.isValidPath(*expected)
+                        && (!worker.store.queryPathInfo(*expected)->ca
+                            || worker.checkPathContents(*expected) == PathContentStatus::Valid))
+                        co_return doneSuccess(BuildResult::Success::AlreadyValid, *realisation);
+                }
+            }
+        }
     } else {
         /* Check what outputs paths are not already valid. */
         auto checkResult = checkPathValidity();
@@ -227,6 +250,28 @@ Goal::Co DerivationGoal::haveDerivation(bool storeDerivation)
             }();
 
             if (!drv->type().isImpure()) {
+                if (std::holds_alternative<DerivationOutput::Deferred>(drv->outputs.at(wantedOutput).raw)
+                    || (!drv->inputDrvs.map.empty()
+                        && std::holds_alternative<DerivationOutput::CAFloating>(drv->outputs.at(wantedOutput).raw))) {
+                    auto current = drv->tryResolve(worker.store, &worker.evalStore);
+                    auto expected =
+                        current ? worker.store.queryResolvedDrvOutputPath(*current, wantedOutput) : std::nullopt;
+                    if (!expected || *expected != realisation.outPath) {
+                        // Resolution collects child results over time. Another
+                        // child can repair their shared producer meanwhile, so
+                        // a successful normalized build need not describe the
+                        // current inputs anymore. Completed goals are removed
+                        // from the worker's maps; a fresh resolution rebuilds
+                        // stale children instead of publishing their old result.
+                        if (!discardedResolutions.insert(pathResolved).second)
+                            throw Error(
+                                "derivation '%s' repeatedly resolved to '%s' without current input proof",
+                                worker.store.printStorePath(drvPath),
+                                worker.store.printStorePath(pathResolved));
+                        trace("inputs changed while building resolved derivation; resolving again");
+                        co_return haveDerivation(storeDerivation);
+                    }
+                }
                 Realisation newRealisation{
                     realisation,
                     {
@@ -235,7 +280,7 @@ Goal::Co DerivationGoal::haveDerivation(bool storeDerivation)
                     }};
                 newRealisation.signatures.clear();
                 worker.store.signRealisation(newRealisation);
-                worker.store.registerDrvOutput(newRealisation);
+                worker.store.registerResolvedDrvOutput(newRealisation, *drv, worker.evalStore);
             }
 
             auto status = success.status;
