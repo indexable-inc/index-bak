@@ -45,6 +45,16 @@ pub struct BuildRow {
     pub phase: Option<String>,
     /// The remote builder host, when the build ran off-machine.
     pub host: Option<String>,
+    /// Unix milliseconds when this derivation started building, so a renderer
+    /// can show elapsed time. A terminal pane redraws many times a second and
+    /// must not be handed a pre-formatted duration that is stale by the next
+    /// frame, so the view carries the instant and the renderer does the clock.
+    /// Stamped when the build activity starts (0 for a still-planned row).
+    pub started_at_ms: u64,
+    /// Unix milliseconds when it stopped, or `None` while it is still running.
+    /// A settled row's duration is `stopped - started`; a live row's is
+    /// `now - started`.
+    pub stopped_at_ms: Option<u64>,
     /// How many build-log lines this derivation has emitted; a rough liveness
     /// signal for a build with no phase reporting.
     pub log_count: usize,
@@ -133,6 +143,8 @@ impl MonitorState {
                     status: build.status,
                     phase: build.phase.clone(),
                     host: build.host.clone(),
+                    started_at_ms: build.started_at_ms,
+                    stopped_at_ms: build.stopped_at_ms,
                     log_count: build.log_count,
                     content_addressed: build.content_addressed,
                 }

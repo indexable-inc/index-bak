@@ -130,6 +130,7 @@ members = [
   "packages/ix2nix/wasm",
   "packages/nix-web-monitor/parser",
   "packages/nix-web-monitor/server",
+  "packages/nix-web-monitor/tui",
   "packages/oci-image-builder",
   "packages/nu-py",
   "packages/plumb/cli",

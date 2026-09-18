@@ -7546,6 +7546,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix-tui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "nix-web-monitor-parser",
+ "ratatui",
+ "serde_json",
+]
+
+[[package]]
 name = "nix-web-monitor"
 version = "0.1.0"
 dependencies = [
