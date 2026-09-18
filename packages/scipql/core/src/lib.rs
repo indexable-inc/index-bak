@@ -28,6 +28,7 @@ mod souffle;
 pub use crate::error::Error;
 pub use crate::facts::{
     Facts, OccurrenceRow, RelationshipRow, SCHEMA, SymbolRow, facts_from_index, load_index,
+    project_root,
 };
 pub use crate::index::index;
 pub use crate::rewrite::EDIT_SCHEMA;

@@ -75,6 +75,9 @@ members = [
   "packages/code-highlight",
   "packages/complexity/cli",
   "packages/complexity/metric",
+  "packages/dag-complexity/cli",
+  "packages/dag-complexity/core",
+  "packages/dag-complexity/rust",
   "packages/edit-applier",
   "packages/error-chain",
   "packages/file-language",
@@ -296,6 +299,8 @@ clone-scanner = { path = "packages/clone-detect/scanner" }
 cli-entry = { path = "packages/cli-entry" }
 clone-test-support = { path = "packages/clone-detect/test-support" }
 complexity-metric = { path = "packages/complexity/metric" }
+dag-complexity-core = { path = "packages/dag-complexity/core" }
+dag-complexity-rust = { path = "packages/dag-complexity/rust" }
 error-chain = { path = "packages/error-chain" }
 code-highlight = { path = "packages/code-highlight" }
 code-tokenizer = { path = "packages/code-tokenizer" }

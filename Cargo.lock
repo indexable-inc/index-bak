@@ -2867,6 +2867,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "dag-complexity-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "dag-complexity-core",
+ "dag-complexity-rust",
+ "serde",
+ "serde_json",
+ "snafu",
+ "tempfile",
+]
+
+[[package]]
+name = "dag-complexity-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "dag-complexity-rust"
+version = "0.1.0"
+dependencies = [
+ "dag-complexity-core",
+ "scip",
+ "scipql-core",
+ "snafu",
+ "xxhash-rust",
+]
+
+[[package]]
 name = "dag-runner"
 version = "0.1.0"
 dependencies = [

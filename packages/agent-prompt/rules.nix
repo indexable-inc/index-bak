@@ -724,6 +724,28 @@
     };
   }
   {
+    dagComplexity = {
+      topics = ["verification" "tooling"];
+      text = ''
+        A graph that rebuilds too much or takes too long gets measured before
+        it gets a theory: `dag-complexity` ranks any DAG by blast radius, and
+        by cheapness times blast radius, which is what separates a compiler
+        everything depends on from a trivial node wired into everything. It
+        also prints the critical path, the floor no amount of parallelism
+        beats. `rust <path>` reads a cargo workspace through rust-analyzer;
+        `graph <file.json>` reads any other adapter's graph; `--against` a
+        saved graph answers "which change invalidated what".
+      '';
+      reason = ''
+        Requested 2026-07-27 with index#4265. ENG-10647 cost an evening of
+        hand-diffing two `ci` closures to find one env var in every cargo
+        unit; the metric that finds it is one command. Covers the whole
+        adapter family on purpose, so a new adapter extends this rule
+        instead of adding a competing one.
+      '';
+    };
+  }
+  {
     experiments = {
       topics = ["verification"];
       text = ''

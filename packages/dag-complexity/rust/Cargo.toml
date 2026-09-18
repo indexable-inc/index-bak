@@ -1,0 +1,16 @@
+[package]
+name = "dag-complexity-rust"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Rust semantic dependency graph from a SCIP index, as a dag-complexity graph"
+
+[dependencies]
+dag-complexity-core.workspace = true
+scip.workspace = true
+scipql-core.workspace = true
+snafu.workspace = true
+xxhash-rust = { workspace = true, features = ["xxh64"] }
+
+[lints]
+workspace = true
