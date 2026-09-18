@@ -1,0 +1,41 @@
+---
+id: ix-term-glyph-sheet-and-reflow
+postedAt: 2026-07-28T00:15:00-07:00
+title: "ix-term: text stops vanishing, captured output reflows, and a stale server is refused"
+tags: [ix-term, terminal, rendering, wire]
+links:
+  - label: term-web-text renderer
+    href: https://github.com/indexable-inc/ix/tree/main/crates/term/web-text
+  - label: browser harnesses
+    href: https://github.com/indexable-inc/ix/tree/main/packages/term/tools
+---
+
+Nineteen changes to ix-term landed overnight. Three are worth knowing about because they were each invisible until somebody looked at the right number.
+
+## A full glyph sheet was remembered as a blank letter
+
+Text went missing near the cursor, permanently, and came back if you changed the font size. That last part is what named it.
+
+The WebGPU renderer keeps every glyph it has drawn in one fixed 1024x1024 texture, and each glyph occupies a whole cell, so capacity in glyphs falls as the square of the font size: about 1860 at the default cell, and 333 at the cell `cmd+` reaches a few presses in. A working set gets there faster than it sounds, because a glyph is keyed by face as well as codepoint, and plain ASCII in four cuts is 380 boxes before a single icon.
+
+Past capacity the packer returned `None`, the quad was skipped, and `Atlas::glyph` then wrote that `None` into its cache. A resource failure was recorded as a property of the character, so a letter that missed once was never drawn again for the life of the pane. The sheet now grows to 4096 on demand, a failure to find room is no longer cached as an answer, and a test fills the sheet deliberately and checks every character still draws.
+
+It arrived with the renderer two days earlier and was waiting for a large enough font.
+
+## Captured output is a document, not a picture
+
+A block of an external's output was a rectangle of cells as many columns wide as the pane happened to be when the command ran, and nothing changed it again. Widening the window left a path broken at sixty columns broken at sixty in a window that fits a hundred and seventy; narrowing it left the block hanging over the right edge behind a horizontal scrollbar whose travel was mostly blank.
+
+The missing fact was why a row ended. libghostty-vt has always recorded it and our safe wrapper never asked. It asks now, so `OutputRow` carries `wrapped`, and `shell_resize` lays a pane's blocks out again and re-publishes the ones that moved. The re-wrap is on the server deliberately: breaking a line means knowing how many columns each character takes, and there is one correct answer to that, the one ghostty gave when it drew the character. A browser has no width table, so re-wrapping there would be a second implementation free to disagree, and free to disagree only for the characters nobody tests with.
+
+## An empty window that meant "I cannot read this"
+
+A launcher adopted whatever `ix-term-server` was already on its port. When a pane gained an `icon` field, an older server stopped satisfying the generated wire types, the workspace list failed to parse, and the client fell back to its empty state. The screen said no workspaces yet while six of them existed, and every press of the button created another one, invisibly.
+
+Both halves now fail loudly. The client names the field, the server, and the fact that anything created against it is real and unseen. The launcher compares a wire fingerprint before adopting anything, and the fingerprint is the SHA-256 of the generated TypeScript rather than a version somebody remembers to bump, because forgetting to bump it is exactly what happened. Both ends hash the same artifact and neither can move alone.
+
+## What this cost, and what it bought
+
+Every one of these was found by measuring rather than reading: frame-by-frame samples across a handoff, inked pixel columns per cell, a workspace list diffed field by field against the types it is parsed into. Each fix shipped with the measurement as a browser harness under `packages/term/tools`, run against a server built from the same commit.
+
+Two harnesses are red on a fresh checkout for reasons unrelated to what they test, because the WebGPU bundle is gitignored with no flake attribute, so `vite dev` can silently serve the DOM fallback and a harness can pass while measuring the wrong renderer. That is being fixed rather than tolerated: a gate that fails for the wrong reason teaches everyone to ignore it, including on the day it is right.
