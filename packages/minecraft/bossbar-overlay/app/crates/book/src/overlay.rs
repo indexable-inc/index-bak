@@ -309,6 +309,7 @@ impl App {
     /// resulting `Moved` reads as our own echo (no double write), refresh
     /// `last_move` so the settle guard does not snap it back from the watcher's
     /// lagged read, and write the position straight to the DB.
+    // clone:ignore intentionally parallel to the bossbar overlay, with book-specific state updates.
     fn scroll_move(&mut self, delta: MouseScrollDelta, phase: TouchPhase) {
         let Some(win) = self.win.as_mut() else {
             return;

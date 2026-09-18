@@ -427,6 +427,7 @@ impl App {
     /// `last_move` so the reconcile guard does not snap it back from the watcher's
     /// lagged read, and write the position straight to the DB. Scrolling a bar
     /// pins it, exactly as dragging one does.
+    // clone:ignore intentionally parallel to the book overlay, with bar-specific state updates.
     fn scroll_move(&mut self, id: i64, delta: MouseScrollDelta, phase: TouchPhase) {
         let Some(win) = self.wins.get_mut(&id) else {
             return;
