@@ -1,0 +1,21 @@
+[package]
+name = "claude-launch-ex"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Elixir NIF for the typed Claude Code launcher via unibind: build the config as a struct, get stream-json back as typed events"
+
+[lib]
+name = "claude_launch_ex"
+crate-type = ["cdylib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+claude-launch-core.workspace = true
+futures.workspace = true
+rustler.workspace = true
+unibind = { workspace = true, features = ["ex"] }
+unibind-ex-runtime.workspace = true
+unibind-runtime.workspace = true

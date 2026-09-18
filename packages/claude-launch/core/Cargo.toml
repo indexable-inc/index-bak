@@ -1,0 +1,23 @@
+[package]
+name = "claude-launch-core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Typed launcher for headless Claude Code: one Config struct renders the argv, and stream-json comes back as parsed events instead of lines"
+
+[lints]
+workspace = true
+
+[dependencies]
+futures.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["io-util", "process", "rt"] }
+
+[dev-dependencies]
+# `kill(pid, 0)` in the drop test: a `kill(1)` subprocess would report
+# "gone" for a binary that is merely absent from the sandbox's PATH, which
+# is the same answer as a successful kill.
+libc.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }

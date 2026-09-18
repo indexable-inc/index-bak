@@ -35,6 +35,8 @@ members = [
   "modules/services/sandboxed-agent/launch",
   "modules/services/sandboxed-agent/proxy",
   "packages/claude-hooks",
+  "packages/claude-launch/core",
+  "packages/claude-launch/ex",
   "packages/linear-file",
   "packages/ix-credential",
   "packages/claude-stories",
@@ -293,6 +295,7 @@ clone-detect = { path = "packages/clone-detect/detect" }
 clone-hash = { path = "packages/clone-detect/hash" }
 clone-pragma = { path = "packages/clone-detect/pragma" }
 clone-scanner = { path = "packages/clone-detect/scanner" }
+claude-launch-core = { path = "packages/claude-launch/core" }
 cli-entry = { path = "packages/cli-entry" }
 clone-test-support = { path = "packages/clone-detect/test-support" }
 complexity-metric = { path = "packages/complexity/metric" }

@@ -1847,6 +1847,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "claude-launch-core"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "claude-launch-ex"
+version = "0.1.0"
+dependencies = [
+ "claude-launch-core",
+ "futures",
+ "rustler",
+ "unibind",
+ "unibind-ex-runtime",
+ "unibind-runtime",
+]
+
+[[package]]
 name = "claude-stories"
 version = "0.1.0"
 dependencies = [
