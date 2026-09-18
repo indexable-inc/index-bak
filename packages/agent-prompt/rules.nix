@@ -564,6 +564,36 @@
     };
   }
   {
+    leaveTheSignal = {
+      topics = ["verification"];
+      text = ''
+        Leave behind the signal that would have found the bug you just
+        fixed. A failure that emits nothing above `info`, or writes its
+        error text where nothing reads it, stays undiagnosable however
+        correct the fix is, so the next occurrence costs the same
+        investigation over again. Emit at the severity the consequence
+        earns, into the sink that is already queried. A retry loop
+        repeating one line cannot separate progress from a stall: carry
+        the attempt count and what changed.
+      '';
+      reason = ''
+        hil-compute-2 published nothing from its cache-push drain for 27.4
+        hours on 2026-08-02, with 44 to 164 failed attempts on individual
+        obligations. `cache-push-tools.nix:2457` does `cat
+        "$publish_stderr" >&2`, yet all 77,455 drain lines over 48 hours
+        carried priority `info` and not one error or warning, so the cause
+        was not diagnosable from logs at all. Ten manual queue archives
+        between Jul 18 and Jul 28 stood in for the fix (ENG-11898).
+
+        Sits after rootCause because that rule governs the diagnosis
+        before a fix and this one governs what the fix leaves behind, and
+        before buildObservability, which is this judgment applied to one
+        tool. Untagged on purpose: it holds wherever the render lands, not
+        only where this text is the whole system prompt.
+      '';
+    };
+  }
+  {
     buildObservability = {
       topics = ["verification" "tooling"];
       tags = ["claude-code"];
