@@ -2361,11 +2361,20 @@ fn render_build_script_run_phase(
     // Cargo nests OUT_DIR several levels deep
     // (`target/<profile>/build/<pkg>-<hash>/out`), so a build script can write
     // relative to its ancestors. The `v8`/`rusty_v8` crate takes a download
-    // lock at `OUT_DIR/../../v8.fslock`; a bare `mktemp -d` gives a path shallow
-    // enough that its grandparent is `/`, so that write hits PermissionDenied.
-    // Nest two levels under the temp dir so `OUT_DIR/../..` lands back inside
-    // the (writable) mktemp dir.
-    script.push_str("build_script_out_dir=$(mktemp -d)/build/out\n");
+    // lock at `OUT_DIR/../../v8.fslock`; a path only one level deep would put
+    // that grandparent at `/`, so that write hits PermissionDenied. Nest two
+    // levels under the build dir so `OUT_DIR/../..` stays writable.
+    //
+    // The path must also be FIXED, never `mktemp -d`: build scripts bake
+    // OUT_DIR into binary artifacts (rustc feature probes embed the probe
+    // source path in their `.rmeta`; cc-compiled objects carry it in debug
+    // strings), and the post-run rewrite to `$out/out-dir` below only touches
+    // text files. A random component in OUT_DIR therefore made those bytes
+    // differ on every rebuild, and the same input-addressed store path
+    // published from two workers failed the cache narHash readback proof
+    // forever (indexable-inc/ix#8465). `$NIX_BUILD_TOP` is constant (`/build`)
+    // inside the sandbox.
+    script.push_str("build_script_out_dir=$NIX_BUILD_TOP/cargo-unit-build-script-run/build/out\n");
     script.push_str("mkdir -p \"$build_script_out_dir\"\n");
     script.push_str("build_script_env=()\n");
     script.push_str("export OUT_DIR=$build_script_out_dir\n");

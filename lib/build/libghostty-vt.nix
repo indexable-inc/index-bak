@@ -119,8 +119,29 @@ in
       ''}
     '';
 
+    # An explicit -Dtarget (never `native`) keeps the artifact byte-identical
+    # across build hosts: zig resolves a native target by probing the RUNNING
+    # kernel and glibc (std.zig.system.resolveTargetQuery) and embeds those
+    # versions in compiler_rt.o's `.data.rel.ro.builtin.target`, so a fleet
+    # kernel upgrade flips the narHash of every rebuild and cache publish
+    # proofs can never converge (indexable-inc/ix#8465: 7.0.11 vs 7.1.3
+    # workers). An explicit triple selects zig's fixed default OS/glibc
+    # version range instead.
+    zigTargetTriple =
+      {
+        x86_64-linux = "x86_64-linux-gnu";
+        aarch64-linux = "aarch64-linux-gnu";
+        x86_64-darwin = "x86_64-macos-none";
+        aarch64-darwin = "aarch64-macos-none";
+      }
+      .${
+        stdenv.hostPlatform.system
+      }
+      or (throw "libghostty-vt: no zig target triple mapped for ${stdenv.hostPlatform.system}");
+
     zigInstallArgs = ''
       -Demit-lib-vt=true \
+      -Dtarget=${zigTargetTriple} \
       -Dcpu=baseline \
       -Doptimize=ReleaseFast \
       -fsys=zlib --search-prefix ${pkgs.zlib}'';

@@ -67,6 +67,11 @@ let
       runHook preInstall
       mkdir -p "$out/lib"
       cp -RL _build/prod/lib/tui_ex "$out/lib/tui_ex"
+      # Mix's compile manifests (.mix/compile.elixir etc.) carry build-time
+      # mtimes, so shipping them makes every rebuild's narHash differ and the
+      # cache publish proof never converges (indexable-inc/ix#8465). Nothing
+      # reads them at runtime: :code.priv_dir wants only ebin/ and priv/.
+      rm -rf "$out/lib/tui_ex/.mix"
       runHook postInstall
     '';
 

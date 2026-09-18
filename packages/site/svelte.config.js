@@ -24,6 +24,14 @@ const config = {
     // app in the ix repo. Override with BASE_PATH for a prefixed deployment.
     paths: {
       base: process.env.BASE_PATH ?? ''
+    },
+    // SvelteKit's default version.name is Date.now(); that stamp lands in the
+    // client bundle, so every rebuild changed a chunk's content hash and
+    // filename and the Nix output never reproduced (indexable-inc/ix#8465).
+    // Nothing here polls /_app/version.json for live update detection, so a
+    // fixed name only removes the nondeterminism.
+    version: {
+      name: 'static'
     }
   }
 };
