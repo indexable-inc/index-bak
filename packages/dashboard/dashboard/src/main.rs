@@ -12,7 +12,8 @@
 //! one stable URL.
 //!
 //! `dashboard demo` runs a self-contained producer that publishes one pane of
-//! each kind, so the canvas can be exercised with no other process running.
+//! each kind, including the writable `input` pane, so the canvas can be
+//! exercised with no other process running.
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
@@ -70,8 +71,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Publish one pane of every kind (terminal, html, data) to the discovery
-    /// directory until interrupted, for exercising the canvas standalone.
+    /// Publish one pane of every kind (terminal, html, exec, data, and a
+    /// writable input) to the discovery directory until interrupted, for
+    /// exercising the canvas standalone.
     Demo,
 }
 
@@ -237,7 +239,8 @@ async fn run_demo(dir: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>
     });
     let mut publisher = Publisher::bind(path.clone(), &tokio::runtime::Handle::current())?;
     println!(
-        "dashboard demo: publishing 4 panes on {} (run `dashboard` in another shell)",
+        "dashboard demo: publishing {} panes on {} (run `dashboard` in another shell)",
+        demo_panes(0).len(),
         path.display()
     );
 
@@ -257,7 +260,8 @@ async fn run_demo(dir: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-/// The demo's panes at a given tick: one of every kind.
+/// The demo's panes at a given tick: one of every kind, including the writable
+/// input pane.
 fn demo_panes(tick: u64) -> Vec<Pane> {
     // `(tick % 20) + 1` is in `1..=20`, so it always fits in `usize`.
     let bar = "#".repeat((tick % 20) as usize + 1);
@@ -333,7 +337,28 @@ fn demo_panes(tick: u64) -> Vec<Pane> {
             },
         },
     );
-    vec![terminal, html, exec, data]
+    // An input pane: a `data` pane with the `input` renderer, the only kind a
+    // viewer can WRITE (see `InputChoice.svelte` for the body shape). Clicking an
+    // option writes the answer into the document's `inputs` map, so the demo
+    // gives the write path added in #4192 a surface a human can click with no
+    // other process running. The body does not tick: the answer is stored under
+    // the pane's key outside the pane, so a changing body would only churn the
+    // text diff without changing what is being asked. Nothing here reads the
+    // answer back -- a `Publisher` only pushes -- so what the demo shows is the
+    // click landing in the document, not a producer reacting to it.
+    let input = Pane::data(
+        "demo-input",
+        "input pane",
+        "input",
+        serde_json::json!({
+            "prompt": "Splice the branch?",
+            "options": [
+                {"value": "splice", "label": "Splice"},
+                {"value": "hold", "label": "Hold", "tone": "danger"},
+            ],
+        }),
+    );
+    vec![terminal, html, exec, data, input]
 }
 
 #[cfg(test)]
