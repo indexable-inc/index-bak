@@ -1,0 +1,18 @@
+# Deliberately empty. This file exists to stop the search for clippy config, not to
+# configure anything.
+#
+# Clippy looks for clippy.toml at the crate manifest directory and walks up through
+# every ancestor until it finds one, taking the first hit without merging. With no
+# file here that search leaves the checkout and picks up whatever sits above it, so a
+# checkout nested inside another repo silently inherits that repo's lint config.
+#
+# Observed, not hypothetical: a checkout at ~/.config/nix/ix/index inherited
+# ~/.config/nix/ix/clippy.toml, whose too-many-arguments-threshold = 3 (stock default
+# is 7) produced 755 local errors that CI does not have, burying the one real failure.
+# ENG-10265.
+#
+# The gate cannot see this file. lib/rust/workspace.nix builds from an explicit
+# allowlist (root Cargo.toml, root Cargo.lock, per-package sources), so the sandbox
+# never receives it and CI runs stock clippy defaults. Empty is what makes a local run
+# agree with the gate. A setting added here would take effect locally and nowhere
+# else, which is the same divergence this file was added to remove.

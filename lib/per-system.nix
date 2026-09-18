@@ -253,6 +253,10 @@
           '(^|/)Cargo\.toml$'
           '(^|/)pyproject\.toml$'
           '(^|/)rust-toolchain\.toml$'
+          # Clippy owns this name. Root only on purpose: a nested clippy.toml
+          # shadows the root one for every crate beneath it, which is the silent
+          # divergence the root file exists to stop. See clippy.toml.
+          '^clippy\.toml$'
           '(^|/)mise\.toml$'
           '(^|/)osv-scanner\.toml$'
           '(^|/)ruff\.toml$'
