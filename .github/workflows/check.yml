@@ -254,7 +254,7 @@ jobs:
       # partial-timings snapshot still beats no timings at all.
       - name: Upload check-results.json
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: check-timings-${{ github.run_id }}
           path: check-results.json
@@ -268,7 +268,7 @@ jobs:
       # is absent whenever the gate ran untraced (tracer bootstrap fails open).
       - name: Upload net-trace summary
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: net-trace-${{ github.run_id }}-${{ github.run_attempt }}
           path: net-trace-summary.json
@@ -305,7 +305,7 @@ jobs:
 
       - name: Upload gate log artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gate-log-${{ github.run_id }}-${{ github.run_attempt }}
           path: gate-log.txt
